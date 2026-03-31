@@ -14,109 +14,133 @@ metadata:
 
 Qwen Code is an **open-source AI agent for the terminal**, optimized for the Qwen3-Coder model family. It provides a Claude Code-like experience with full agentic workflow capabilities, but it's **free, open-source, and supports OpenRouter**.
 
-## When to Use
-
-- User asks for code generation, refactoring, or debugging
-- Need automated code reviews or test generation
-- Working in headless/CI environments (no browser needed)
-- Want multi-provider support (OpenRouter, OpenAI, Anthropic, Gemini)
-- Prefer free tier (1000 req/day with Qwen OAuth) or BYOK (bring your own key)
-- Need PTY-based sandboxed execution with auto-approval modes
+The CLI is [open-source](https://github.com/QwenLM/qwen-code) (MIT, TypeScript) and supports interactive sessions, non-interactive one-shots, multi-provider authentication (Qwen OAuth, OpenRouter, OpenAI-compatible), PTY-based sandboxed execution, and auto-approval modes.
 
 ## Prerequisites
 
-```bash
-# Install Node.js 20+ and qwen CLI
-node --version  # should be v20+
-npm install -g @qwen-code/qwen-code@latest
-
-# Verify installation
-qwen --version  # 0.13.2+
-```
+- Node.js 20+ installed
+- Qwen Code installed: `npm install -g @qwen-code/qwen-code@latest`
+- Authenticated: see Authentication section below
+- Use `pty=true` in terminal calls — Qwen Code is an interactive terminal app
 
 ### Authentication (choose one)
 
 | Method | Setup | Best for |
 |--------|-------|----------|
-| **Qwen OAuth** (free) | `qwen` then `/auth` → browser login | Interactive sessions, 1000 req/day |
+| **Qwen OAuth** (free) | Run `qwen` then use `/auth` command to log in | Interactive sessions, 1000 req/day free tier |
 | **OpenRouter API key** (headless) | `export OPENROUTER_API_KEY="sk-or-..."` | Server/CI, unlimited (paid) |
-| **Any OpenAI-compatible** | Edit `~/.qwen/settings.json` | Custom endpoints (Ollama, vLLM, etc.) |
+| **Any OpenAI-compatible** | Edit `~/.qwen/settings.json` to add custom providers | Custom endpoints (Ollama, vLLM, etc.) |
 
-## Quick Reference
+## One-Shot Tasks
 
-### One-Shot Code Generation
-
-```python
-# Using terminal tool directly (for simple tasks)
-terminal(command="qwen -p 'Write a FastAPI endpoint with JWT auth' --yolo", workdir="~/project", pty=true)
+```
+terminal(command="qwen -p 'Add JWT authentication with refresh tokens to the Express API' --yolo", workdir="/path/to/project", pty=true)
 ```
 
-### Background Mode (Long Tasks)
+For quick scratch work:
+```
+terminal(command="cd $(mktemp -d) && git init && qwen -p 'Build a REST API for todos with SQLite' --yolo", pty=true)
+```
 
-```python
+## Background Mode (Long Tasks)
+
+For tasks that take minutes, use background mode so you can monitor progress:
+
+```
 # Start in background with PTY
-terminal(command="qwen -p 'Refactor the auth module to use OAuth2' --yolo", workdir="~/project", background=true, pty=True)
-# Monitor
+terminal(command="qwen -p 'Refactor the auth module to use OAuth 2.0' --yolo", workdir="~/project", background=true, pty=true)
+# Returns session_id
+
+# Monitor progress
 process(action="poll", session_id="<id>")
 process(action="log", session_id="<id>")
+
+# Send input if Qwen Code asks a question
+process(action="submit", session_id="<id>", data="yes")
+
+# Kill if needed
+process(action="kill", session_id="<id>")
 ```
 
-### PR Reviews
+## PR Reviews
 
-```python
-terminal(command="cd /tmp/review && git clone https://github.com/user/repo.git . && gh pr checkout 42 && qwen -p 'Review this PR against main. Check for bugs, security issues, and style.' --yolo", pty=true)
+Clone to a temp directory to avoid modifying the working tree:
+
+```
+terminal(command="REVIEW=$(mktemp -d) && git clone https://github.com/user/repo.git $REVIEW && cd $REVIEW && gh pr checkout 42 && qwen -p 'Review this PR against main. Check for bugs, security issues, and code quality.' --yolo", pty=true)
 ```
 
-### Parallel Work
+Or use git worktrees:
+```
+terminal(command="git worktree add /tmp/pr-42 pr-42-branch", workdir="~/project")
+terminal(command="qwen -p 'Review the changes in this branch vs main' --yolo", workdir="/tmp/pr-42", pty=true)
+```
 
-```python
+## Parallel Work
+
+Spawn multiple Qwen Code instances for independent tasks:
+
+```
 terminal(command="qwen -p 'Fix the login bug' --yolo", workdir="/tmp/issue-1", background=true, pty=true)
 terminal(command="qwen -p 'Add unit tests for auth' --yolo", workdir="/tmp/issue-2", background=true, pty=true)
+
+# Monitor all
 process(action="list")
 ```
+
+## Session Commands
+
+During an interactive session, use these commands:
+
+| Command | Effect |
+|---------|--------|
+| `/auth` | Manage authentication (Qwen OAuth, API keys) |
+| `/model` | List and switch available models |
+| `/compress` | Shrink conversation history to save tokens |
+| `/clear` | Wipe history and start fresh |
+| `/copy` | Copy last assistant message to clipboard |
+| `Ctrl+C` | Cancel current operation |
 
 ## Key Flags
 
 | Flag | Effect |
 |------|--------|
-| `qwen -p "prompt"` | One-shot task, exits when done |
-| `--yolo` | Auto-approve all file changes (no confirmation) |
+| `qwen -p "task"` | Non-interactive one-shot execution |
+| `--yolo` | Auto-approve all actions (no confirmation prompts) |
 | `--model <id>` | Use specific model (e.g. `qwen/qwen3-coder`) |
 | `--workdir <dir>` | Set working directory |
-| `-i` | Interactive mode (multi-turn) |
-| `--system-prompt <text>` | Override system prompt (for BMAD agents) |
+| `-i` | Interactive mode (multi-turn chat) |
+| `--system-prompt <text>` | Override system prompt (for custom agents/BMAD) |
 
 ## Rules
 
-1. **Always use `pty=true`** — Qwen Code is an interactive terminal app and will hang without a PTY.
-2. **Use `workdir`** — Keep the agent focused on the right directory.
-3. **Background for long tasks** — Use `background=true` and monitor with `process` tool.
-4. **Don't interfere** — Monitor with `poll`/`log`, don't kill slow sessions.
-5. **Report results** — After completion, check what changed and summarize for the user.
-6. **Prefer headless mode** — For delegation, use `-p` flag instead of interactive mode.
+1. **Always use `pty=true`** — Qwen Code is an interactive terminal app and will hang without a PTY
+2. **Use `workdir`** — keep the agent focused on the right directory
+3. **Background for long tasks** — use `background=true` and monitor with `process` tool
+4. **Don't interfere** — monitor with `poll`/`log`, don't kill sessions because they're slow
+5. **Report results** — after completion, check what changed and summarize for the user
+6. **Prefer headless mode** — for delegation, use `-p` flag instead of interactive mode
+7. **Check prerequisites** — verify `qwen` CLI is installed before attempting delegation
 
 ## Integration with BMAD Method
 
 Qwen Code's LLM-agnostic architecture supports BMAD agent personas via system prompts:
 
-```bash
-# Run a BMAD agent role
+```
 qwen -p "Analyze requirements for a todo API" \
-  --system-prompt "You are the BMAD Analyst (Mary). You are analytical, detail-oriented. Your job: transform user needs into clear specs." \
+  --system-prompt "You are the BMAD Analyst. You are analytical, detail-oriented. Your job: transform user needs into clear specs." \
   --yolo
 ```
 
-Or chain multiple roles:
-
-```bash
-# Analyst → Architect → Dev
-qwen -p "$(cat brief.md)" --system-prompt "$(cat bmad-analyst.md)" --yolo
-# Capture output → feed to next agent
+Or chain multiple roles using output redirection:
+```
+qwen -p "Analyze: $(cat brief.md)" --system-prompt "You are the BMAD Analyst." --yolo > analysis.md
+qwen -p "Design architecture from: $(cat analysis.md)" --system-prompt "You are the BMAD Architect." --yolo > design.md
 ```
 
 ## Provider Configuration (Advanced)
 
-Edit `~/.qwen/settings.json` to add custom providers:
+Edit `~/.qwen/settings.json` to add custom OpenAI-compatible providers:
 
 ```json
 {
@@ -147,32 +171,32 @@ Edit `~/.qwen/settings.json` to add custom providers:
 
 | Error | Solution |
 |-------|----------|
-| `No auth type is selected` | Set `OPENROUTER_API_KEY` or run `qwen auth qwen-oauth` |
+| `No auth type is selected` | Set `OPENROUTER_API_KEY` or run `qwen` then `/auth` to configure Qwen OAuth |
 | `Qwen Code CLI not found` | `npm install -g @qwen-code/qwen-code@latest` |
-| `Command hangs` | Add `pty=true` to terminal call |
-| `Model not found` | Check `~/.qwen/settings.json` and `/model` list |
+| `Command hangs` | Add `pty=true` to the terminal call |
+| `Model not found` | Check `~/.qwen/settings.json` and use `/model` in interactive mode to list available models |
 | `Sandbox permission denied` (macOS) | Use `--yolo` or set `"tools.sandbox": false` in settings |
-| Rate limit (OAuth) | Wait 24h or switch to OpenRouter API key |
+| Rate limit (OAuth free tier) | Wait 24 hours or switch to OpenRouter API key for unlimited usage |
 
 ## Examples
 
 **Create a Python CLI calculator:**
-```bash
+```
 qwen -p "Build a CLI calculator in Python with add/subtract/multiply/divide operations, error handling, and tests." --yolo
 ```
 
 **Refactor existing code:**
-```bash
+```
 cd ~/myproject
 qwen -p "Refactor the database module to use asyncpg and connection pooling." --yolo
 ```
 
 **Explain a codebase:**
-```bash
+```
 qwen -p "Provide an architecture overview and explain the main modules." --yolo
 ```
 
 **Generate tests:**
-```bash
+```
 qwen -p "Write pytest unit tests for all functions in src/auth.py with mocks for external services." --yolo
 ```
