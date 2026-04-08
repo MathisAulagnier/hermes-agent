@@ -136,6 +136,7 @@ def _clear_provider_env(monkeypatch):
     for key in PROVIDER_ENV_VARS:
         monkeypatch.delenv(key, raising=False)
     monkeypatch.setattr("hermes_cli.auth._load_auth_store", lambda: {})
+    monkeypatch.setattr("hermes_cli.copilot_auth._try_gh_cli_token", lambda: None)
 
 
 class TestResolveProvider:
