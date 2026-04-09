@@ -37,6 +37,7 @@ class TestProviderRegistry:
 
     @pytest.mark.parametrize("provider_id,name,auth_type", [
         ("copilot-acp", "GitHub Copilot ACP", "external_process"),
+        ("qwen-code-acp", "Qwen Code ACP", "external_process"),
         ("copilot", "GitHub Copilot", "api_key"),
         ("huggingface", "Hugging Face", "api_key"),
         ("zai", "Z.AI / GLM", "api_key"),
@@ -96,6 +97,7 @@ class TestProviderRegistry:
     def test_base_urls(self):
         assert PROVIDER_REGISTRY["copilot"].inference_base_url == "https://api.githubcopilot.com"
         assert PROVIDER_REGISTRY["copilot-acp"].inference_base_url == "acp://copilot"
+        assert PROVIDER_REGISTRY["qwen-code-acp"].inference_base_url == "acp://qwen-code"
         assert PROVIDER_REGISTRY["zai"].inference_base_url == "https://api.z.ai/api/paas/v4"
         assert PROVIDER_REGISTRY["kimi-coding"].inference_base_url == "https://api.moonshot.ai/v1"
         assert PROVIDER_REGISTRY["minimax"].inference_base_url == "https://api.minimax.io/anthropic"
@@ -331,6 +333,18 @@ class TestApiKeyProviderStatus:
         assert status["args"] == ["--acp", "--stdio", "--debug"]
         assert status["base_url"] == "acp://copilot"
 
+    def test_qwen_code_acp_status_detects_local_cli(self, monkeypatch):
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        status = get_external_process_provider_status("qwen-code-acp")
+
+        assert status["configured"] is True
+        assert status["logged_in"] is True
+        assert status["command"] == "qwen"
+        assert status["resolved_command"] == "/usr/local/bin/qwen"
+        assert status["args"] == ["--acp"]
+        assert status["base_url"] == "acp://qwen-code"
+
     def test_get_auth_status_dispatches_to_external_process(self, monkeypatch):
         monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
 
@@ -338,6 +352,14 @@ class TestApiKeyProviderStatus:
 
         assert status["configured"] is True
         assert status["provider"] == "copilot-acp"
+
+    def test_get_auth_status_dispatches_to_qwen_code_acp(self, monkeypatch):
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/opt/bin/{command}")
+
+        status = get_auth_status("qwen-code-acp")
+
+        assert status["configured"] is True
+        assert status["provider"] == "qwen-code-acp"
 
     def test_non_api_key_provider(self):
         status = get_api_key_provider_status("nous")
@@ -412,6 +434,18 @@ class TestResolveApiKeyProviderCredentials:
         assert creds["base_url"] == "acp://copilot"
         assert creds["command"] == "/usr/local/bin/copilot"
         assert creds["args"] == ["--acp", "--stdio"]
+        assert creds["source"] == "process"
+
+    def test_resolve_qwen_code_acp_with_local_cli(self, monkeypatch):
+        monkeypatch.setattr("hermes_cli.auth.shutil.which", lambda command: f"/usr/local/bin/{command}")
+
+        creds = resolve_external_process_provider_credentials("qwen-code-acp")
+
+        assert creds["provider"] == "qwen-code-acp"
+        assert creds["api_key"] == "qwen-code-acp"
+        assert creds["base_url"] == "acp://qwen-code"
+        assert creds["command"] == "/usr/local/bin/qwen"
+        assert creds["args"] == ["--acp"]
         assert creds["source"] == "process"
 
     def test_resolve_kimi_with_key(self, monkeypatch):
